@@ -1,0 +1,87 @@
+//????????????
+
+#ifndef _GENERAL_H_
+#define _GENERAL_H_
+
+//?豸
+#define NLK_G_MACHINE			"MACHINE"		//????
+#define NLK_G_COMPRESSOR		"COMPRESSOR"	//?????
+#define NLK_G_NLK_G_ROBOT		"ROBOT"			//??????
+#define NLK_G_RFID				"RFID"			//RFID
+
+//???
+#define NLK_G_CONTROLLER	"CONTROLLER"	//??????
+#define NLK_G_AXIS			"AXIS"			//??
+#define NLK_G_SCREW			"SCREW"			//???
+#define NLK_G_MOTOR			"MOTOR"			//???
+
+//??????
+#define NLK_G_LENGTH		"LENGTH"		//????
+#define NLK_G_WIDTH			"WIDTH"			//???
+#define NLK_G_DEPTH			"DEPTH"			//???
+#define NLK_G_TEMPERATURE	"TEMPERATURE"   //???
+#define NLK_G_RADIUS		"RADIUS"		//??
+#define NLK_G_FORCE			"FORCE"			//??
+#define NLK_G_POSITION		"POSITION"		//λ??
+#define NLK_G_CURRENT		"CURRENT"		//????
+#define NLK_G_SPEED			"SPEED"			//???
+#define NLK_G_TIME			"TIME"			//???
+#define NLK_G_COUNT			"COUNT"			//????
+#define NLK_G_COORDINATE	"COORDINATE"	//????
+#define NLK_G_ENERGY		"ENERGY"		//????
+#define NLK_G_POWER			"POWER"			//????
+#define NLK_G_PRESSURE		"PRESSURE"		//???
+
+//?????????????
+#define NLK_G_PROGRAM		"PROGRAM"		//????
+#define NLK_G_SUBPROGRAM	"SUBPROGRAM"	//?????
+#define NLK_G_LINE_NUMBER	"LINE_NUMBER"	//?????к?
+#define NLK_G_PROGRAM_NUMBER	"PROGRAM_NUMBER"	//?????
+#define NLK_G_TOOL_NUMBER	"TOOL_NUMBER"	//?????
+#define NLK_G_VARIABLE		"VARIABLE"		//????
+#define NLK_G_PARAMETER		"PARAMETER"		//????
+#define NLK_G_WARNING		"WARNING"		//????
+#define NLK_G_EVENT			"EVENT"			//???
+
+//?????
+#define NLK_G_CONSOLE			"CONSOLE"	//?????
+
+//???????
+#define NLK_G_IMAGE			"IMAGE"			//??
+#define NLK_G_VIDEO			"VIDEO"			//???
+#define NLK_G_AUDIO			"AUDIO"			//???
+#define NLK_G_FILE			"FILE"			//???
+
+//????
+#define NLK_G_STATUS		"STATUS"		//??
+#define NLK_G_NAME			"NAME"			//????
+#define NLK_G_NUMBER		"NUMBER"		//???
+#define NLK_G_TYPE			"TYPE"			//????
+#define NLK_G_VERSION		"VERSION"		//?汾
+#define NLK_G_MODEL			"MODEL"			//???
+#define NLK_G_MANUFACTURER	"MANUFACTURER"	//??????
+
+//????????
+#define NLK_G_CRDS_X	"x"
+#define NLK_G_CRDS_Y	"y"
+#define NLK_G_CRDS_Z	"z"
+
+//????????
+#define NLK_G_PARAMS_VALUE		"value"						//?
+#define NLK_G_PARAMS_NAME		"name"						//????
+
+//???????
+#define NLK_G_FILE_PROP_NAME		"name"
+#define NLK_G_FILE_PROP_SIZE		"size"
+#define NLK_G_FILE_PROP_CHANGE_TIME	"changeTime"
+#define NLK_G_FILE_PROP_TYPE		"type"
+
+//???????
+#define NLK_G_FILE_TYPE_FILE		"file"
+#define NLK_G_FILE_TYPE_DIR			"directory"
+
+//???
+#define NLK_G_STATUS_RUNNING		"running"	//????
+#define	NLK_G_STATUS_FREE			"free"		//????
+
+#endif
