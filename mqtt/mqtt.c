@@ -2,7 +2,6 @@
  * This example shows how to publish messages from outside of the Mosquitto network loop.
  */
 
-#include "mosq/mosquitto.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,7 +9,13 @@
 
 #include "mqtt.h"
 
-const char *TOPIC = "example/temperature";
+#define MAX_TOPICS 10
+
+const char *TOPICS[MAX_TOPICS] = {NULL};
+size_t NUM_TOPICS = 1;
+
+struct mosquitto *mosq;
+
 
 /* Callback called when the client knows to the best of its abilities that a
  * PUBLISH has been successfully sent. For QoS 0 this means the message has
@@ -58,6 +63,26 @@ void publish_sensor_data(struct mosquitto *mosq, const char *topic)
 	}
 }
 
+
+void publish_msg(const char *topic, const char *payload)
+{
+	int rc;
+
+	/* Publish the message
+	 * mosq - our client instance
+	 * *mid = NULL - we don't want to know what the message id for this message is
+	 * topic = "example/temperature" - the topic on which this message will be published
+	 * payloadlen = strlen(payload) - the length of our payload in bytes
+	 * payload - the actual payload
+	 * qos = 2 - publish with QoS 2 for this example
+	 * retain = false - do not use the retained message feature for this message
+	 */
+	rc = mosquitto_publish(mosq, NULL, topic, strlen(payload), payload, 2, false);
+	if(rc != MOSQ_ERR_SUCCESS){
+		fprintf(stderr, "Error publishing: %s\n", mosquitto_strerror(rc));
+	}
+}
+
 /*
  * This example shows how to write a client that subscribes to a topic and does
  * not do anything other than handle the messages that are received.
@@ -85,12 +110,16 @@ void on_connect(struct mosquitto *mosq, void *obj, int reason_code)
 	/* Making subscriptions in the on_connect() callback means that if the
 	 * connection drops and is automatically resumed by the client, then the
 	 * subscriptions will be recreated when the client reconnects. */
-	rc = mosquitto_subscribe(mosq, NULL, TOPIC, 1);
-	if(rc != MOSQ_ERR_SUCCESS){
-		fprintf(stderr, "Error subscribing: %s\n", mosquitto_strerror(rc));
-		/* We might as well disconnect if we were unable to subscribe */
-		mosquitto_disconnect(mosq);
+	for (int i = 0; i < NUM_TOPICS; i++) {
+		rc = mosquitto_subscribe(mosq, NULL, TOPICS[i], 1);
+		if(rc != MOSQ_ERR_SUCCESS){
+			fprintf(stderr, "Error subscribing: %s\n", mosquitto_strerror(rc));
+			/* We might as well disconnect if we were unable to subscribe */
+			mosquitto_disconnect(mosq);
+			break;
+		}
 	}
+
 }
 
 
@@ -126,10 +155,67 @@ void on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_messag
 }
 
 
-int testmqtt()
+int initMqttFileTrans(const char *brokerAddress, const int port, const int keepalive,
+		const char *topics[], const size_t numTopics, void (*callback)(struct mosquitto *, void *, const struct mosquitto_message *))
 {
-	struct mosquitto *mosq;
 	int rc;
+	if (numTopics <= 0) {
+		printf("Error: num of topics must be greater than 0\n");
+		return 1;
+	}
+	NUM_TOPICS = numTopics;
+	for (int i = 0; i < NUM_TOPICS; i++) {
+		TOPICS[i] = topics[i];
+	}
+
+	/* Required before calling other mosquitto functions */
+	mosquitto_lib_init();
+
+	/* Create a new client instance.
+	 * id = NULL -> ask the broker to generate a client id for us
+	 * clean session = true -> the broker should remove old sessions when we connect
+	 * obj = NULL -> we aren't passing any of our private data for callbacks
+	 */
+	mosq = mosquitto_new(NULL, true, NULL);
+	if(mosq == NULL){
+		fprintf(stderr, "Error: Out of memory.\n");
+		return 1;
+	}
+
+	/* Configure callbacks. This should be done before connecting ideally. */
+	mosquitto_connect_callback_set(mosq, on_connect);
+	mosquitto_publish_callback_set(mosq, on_publish);
+	mosquitto_subscribe_callback_set(mosq, on_subscribe);
+	mosquitto_message_callback_set(mosq, callback);
+
+	/* Connect to test.mosquitto.org on port 1883, with a keepalive of 60 seconds.
+	 * This call makes the socket connection only, it does not complete the MQTT
+	 * CONNECT/CONNACK flow, you should use mosquitto_loop_start() or
+	 * mosquitto_loop_forever() for processing net traffic. */
+	rc = mosquitto_connect(mosq, brokerAddress, port, keepalive);
+	if(rc != MOSQ_ERR_SUCCESS){
+		mosquitto_destroy(mosq);
+		fprintf(stderr, "Error: %s\n", mosquitto_strerror(rc));
+		return 1;
+	}
+
+	/* Run the network loop in a blocking call. The only thing we do in this
+	 * example is to print incoming messages, so a blocking call here is fine.
+	 *
+	 * This call will continue forever, carrying automatic reconnections if
+	 * necessary, until the user calls mosquitto_disconnect().
+	 */
+	mosquitto_loop_forever(mosq, -1, 1);
+
+	mosquitto_lib_cleanup();
+	return 0;
+}
+
+
+int testMqtt()
+{
+	int rc;
+	TOPICS[0] = "example/temperature";
 
 	/* Required before calling other mosquitto functions */
 	mosquitto_lib_init();
@@ -178,7 +264,7 @@ int testmqtt()
 	 * In this case we know it is 1 second before we start publishing.
 	 */
 	while(1){
-		publish_sensor_data(mosq, TOPIC);
+		publish_sensor_data(mosq, TOPICS[0]);
 	}
 
 	mosquitto_lib_cleanup();

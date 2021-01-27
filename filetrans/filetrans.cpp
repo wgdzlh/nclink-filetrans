@@ -1,18 +1,24 @@
 
+#include<string>
 #include "util/utils.h"
-#include "json/ujdecode.h"
 #include "../ftp/ftplib.h"
 
 #include "filetrans.h"
+#define GUARD_NULL if(nullptr==ftp)connectFtpServ()
+
+using namespace std;
 
 ftplib *ftp = nullptr;
+string hostAndPort;
+string username;
+string password;
 
 
 void connectFtpServ()
 {
 	ftp = new ftplib();
-	ftp->Connect("pi-ubt.local:21");
-	ftp->Login("one", "1234");
+	ftp->Connect(hostAndPort.c_str());
+	ftp->Login(username.c_str(), password.c_str());
 }
 
 
@@ -27,18 +33,36 @@ void disconnect()
 }
 
 
-int listDir()
+void setupServ(const char *hostPort, const char *user, const char *pwd)
 {
-	if (nullptr == ftp)
-	{
-		connectFtpServ();
-	}
-	ftp->Dir(NULL, "/ftp/one/test");
-	return 0;
+	hostAndPort = hostPort;
+	username = user;
+	password = pwd;
 }
 
 
-void cleanUp()
+int listDir(const char *dir)
+{
+	GUARD_NULL;
+	ftp->Dir(NULL, dir);
+	return 0;
+}
+
+int uploadFile(const char *localFile, const char * remoteFile)
+{
+	GUARD_NULL;
+	ftp->Put(localFile, remoteFile, ftplib::image);
+	return 0;
+}
+
+int downloadFile(const char *localFile, const char * remoteFile)
+{
+	GUARD_NULL;
+	ftp->Get(localFile, remoteFile, ftplib::image);
+	return 0;
+}
+
+void cleanupServ()
 {
 	disconnect();
 }

@@ -5,10 +5,6 @@
 #define _LARGEFILE64_SOURCE
 #endif
 
-#ifdef SSL
-#include <openssl/ssl.h>
-#endif
-
 #include "ftplib.h"
 
 #if defined(_WIN32)
@@ -1531,13 +1527,9 @@ int ftplib::Fxp(ftplib* src, ftplib* dst, const char *pathSrc, const char *pathD
 	return retval;
 }
 
-
+#ifdef SSL
 int ftplib::SetDataEncryption(dataencryption enc)
 {
-#ifndef SSL
-	(void)enc;
-	return 0;
-#else
 	if (!mp_ftphandle->tlsctrl) return 0;
 	if (!FtpSendCmd("PBSZ 0",'2',mp_ftphandle)) return 0;
 	switch(enc)
@@ -1554,14 +1546,10 @@ int ftplib::SetDataEncryption(dataencryption enc)
 		return 0;
 	}
 	return 1;
-#endif
 }
 
 int ftplib::NegotiateEncryption()
 {
-#ifndef SSL
-	return 0;
-#else
 	int ret;
 
 	if (!FtpSendCmd("AUTH TLS",'2',mp_ftphandle)) return 0;
@@ -1581,17 +1569,13 @@ int ftplib::NegotiateEncryption()
 	if (ret < 1) return 0;
 
 	return 1;
-#endif
 }
 
 void ftplib::SetCallbackCertFunction(FtpCallbackCert pointer)
 {
-#ifndef SSL
-	(void)pointer;
-#else
 	mp_ftphandle->certcb = pointer;
-#endif
 }
+#endif
 
 void ftplib::SetCallbackIdleFunction(FtpCallbackIdle pointer)
 {
