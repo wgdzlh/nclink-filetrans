@@ -2,19 +2,28 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 #include "filetrans/filetrans.h"
 #include "mqtt/mqtt.h"
 #include "json/ujdecode.h"
 
 #define BUFFER_SIZE 1024
+#define MAX_PAYLOAD_SIZE BUFFER_SIZE*8
 #define PATH_MAX_LEN 128
+#define MTID_MAX_LEN 32
 
 #define METHOD_CALL_HEADER		"Method/Call/"
 #define METHOD_RETURN_HEADER	"Method/Return/"
-#define IDS_INDEX 				12
+#define METHOD_STATUS_HEADER	"Method/Status/"
+#define CALL_IDS_INDEX 			12
+#define STATUS_IDS_INDEX		14
 #define RETURN_MSG_FORMAT 		"{\"@id\": \"messageID\", \"id\": \"%s\",\"return\": \"OK\"}"
+#define STATUS_MSG_FORMAT 		"{\"@id\": \"messageID\", \"id\": \"%s\",\"status\": \"executing\", \"progress\": %.0f}"
 
 static char _buffer[BUFFER_SIZE];
+
+
+static pthread_t backgroundThread = 0;
 
 
 typedef enum FileTransProtocol {
@@ -33,8 +42,10 @@ typedef enum FileTransOperation {
 	UNDEFINDED
 } FileTransOperation;
 
-typedef struct UploadConf {
+
+typedef struct MethodConf {
 	FileTransProtocol fileTransProtocol;
+	char *ids;
 	char *methodId;
 	char *address;
 	char *user;
@@ -42,27 +53,37 @@ typedef struct UploadConf {
 	char *source;
 	char *destination;
 	FileTransOperation operation;
-} UploadConf;
+} MethodConf;
 
 
-UploadConf* getUploadConf()
+typedef struct MsgInfo {
+	char *topic;
+	char *payload;
+} MsgInfo;
+
+
+static MethodConf *_conf;
+
+
+static inline MethodConf* getUploadConf()
 {
-	UploadConf *t = (UploadConf *)calloc(sizeof(UploadConf), 1);
-	return t;
+	return (MethodConf *)calloc(sizeof(MethodConf), 1);
 }
 
 
-void freeUploadConf(UploadConf *t)
+void freeUploadConf()
 {
-	if (NULL != t)
+	if (NULL != _conf)
 	{
-		free(t->methodId);
-		free(t->address);
-		free(t->user);
-		free(t->password);
-		free(t->source);
-		free(t->destination);
-		free(t);
+		free(_conf->ids);
+		free(_conf->methodId);
+		free(_conf->address);
+		free(_conf->user);
+		free(_conf->password);
+		free(_conf->source);
+		free(_conf->destination);
+		free(_conf);
+		_conf = NULL;
 	}
 }
 
@@ -109,17 +130,17 @@ FileTransOperation json2Operation(UJObject input)
 }
 
 
-void setUploadConf(UploadConf *t, UJObject mtid, UJObject protocol, UJObject address,
+void setUploadConf(UJObject mtid, UJObject protocol, UJObject address,
 		UJObject user, UJObject pwd, UJObject src, UJObject dst, UJObject op)
 {
-	t->fileTransProtocol = json2Protocol(protocol);
-	json2cs(mtid, &t->methodId);
-	json2cs(address, &t->address);
-	json2cs(user, &t->user);
-	json2cs(pwd, &t->password);
-	json2cs(src, &t->source);
-	json2cs(dst, &t->destination);
-	t->operation = json2Operation(op);
+	_conf->fileTransProtocol = json2Protocol(protocol);
+	json2cs(mtid, &_conf->methodId);
+	json2cs(address, &_conf->address);
+	json2cs(user, &_conf->user);
+	json2cs(pwd, &_conf->password);
+	json2cs(src, &_conf->source);
+	json2cs(dst, &_conf->destination);
+	_conf->operation = json2Operation(op);
 }
 
 
@@ -136,9 +157,8 @@ UJObject parseJSON(const char* input)
 }
 
 
-UploadConf* parseArgs(UJObject input)
+void parseArgsToConf(UJObject input, const char *ids)
 {
-	UploadConf *ret = NULL;
 	const wchar_t *jsonKeys[] = {
 		// L"@id",
 		L"id",
@@ -172,11 +192,124 @@ UploadConf* parseArgs(UJObject input)
 		if (UJObjectUnpack(args, 7, "SSSSSSS", argsKeys,
 				&protocol, &address, &user, &password, &source, &destination, &operation) == 7)
 		{
-			ret = getUploadConf();
-			setUploadConf(ret, mtid, protocol, address, user, password, source, destination, operation);
+			_conf = getUploadConf();
+			_conf->ids = strndup(ids, PATH_MAX_LEN);
+			setUploadConf(mtid, protocol, address, user, password, source, destination, operation);
 		}
 	}
+}
+
+
+static inline void pubReturnMsg(const char *ids)
+{
+	char pubTopic[PATH_MAX_LEN];
+	sprintf(pubTopic, METHOD_RETURN_HEADER"%s", ids);
+	printf("PUB: %s\n", pubTopic);
+	publish_msg(pubTopic, _buffer);
+}
+
+
+void returnMsg()
+{
+	sprintf(_buffer, RETURN_MSG_FORMAT, _conf->methodId);
+	pubReturnMsg(_conf->ids);
+}
+
+
+void statusMsg(const char *methodId, const char *ids)
+{
+	sprintf(_buffer, STATUS_MSG_FORMAT, methodId, getProgressPercent()*100);
+	pubReturnMsg(ids);
+}
+
+/*
+MsgInfo* getMsgInfo(const struct mosquitto_message *msg)
+{
+	MsgInfo *ret = (MsgInfo *)malloc(sizeof(MsgInfo));
+	ret->topic = strndup(msg->topic, PATH_MAX_LEN);
+	ret->payload = strndup(msg->payload, MAX_PAYLOAD_SIZE);
 	return ret;
+}
+
+
+void freeMsgInfo(MsgInfo *msg)
+{
+	if (NULL != msg)
+	{
+		free(msg->topic);
+		free(msg->payload);
+		free(msg);
+	}
+}
+*/
+
+static inline void action(int isPull)
+{
+	setupServ(_conf->address, _conf->user, _conf->password);
+	(isPull ? uploadFile : downloadFile)(_conf->source, _conf->destination);
+	cleanupServ();
+	printf("%s %s finished: %s -> %s\n", isPull ? "pull" : "push",
+		_conf->methodId, _conf->source, _conf->destination);
+	returnMsg();
+}
+
+void* fileOps(void *arg)
+{
+	switch (_conf->operation)
+	{
+	case PULL:
+		action(true);
+		break;
+	case PUSH:
+		action(false);
+		break;
+	default:
+		printf("operation not supported.\n");
+		break;
+	}
+	freeUploadConf();
+	return NULL;
+}
+
+
+void handleMethodCall(const struct mosquitto_message *msg)
+{
+	UJObject json = parseJSON((char *)msg->payload);
+	if (NULL != json)
+	{
+		if (NULL != _conf)
+		{
+			pthread_join(backgroundThread, NULL);
+		}
+		parseArgsToConf(json, msg->topic+CALL_IDS_INDEX);
+		if (NULL != _conf)
+		{
+			pthread_create(&backgroundThread, NULL, fileOps, NULL);
+		}
+	}
+}
+
+
+void handleMethodStatus(const struct mosquitto_message *msg)
+{
+	UJObject json = parseJSON((char *)msg->payload);
+	if (NULL != json)
+	{
+		const wchar_t *jsonKeys[] = { L"id" };
+		UJObject mtid;
+		if (UJObjectUnpack(json, 1, "S", jsonKeys, /*&id,*/ &mtid) == 1)
+		{
+			char mtidBuffer[MTID_MAX_LEN];
+			wcstombs(mtidBuffer, UJReadString(mtid, NULL), MTID_MAX_LEN);
+			statusMsg(mtidBuffer, msg->topic+STATUS_IDS_INDEX);
+		}
+	}
+}
+
+
+static inline int check_prefix(const char *str, const char *pre)
+{
+	return strncmp(str, pre, strlen(pre)) == 0;
 }
 
 
@@ -184,37 +317,13 @@ void on_mqtt_msg(struct mosquitto *mosq, void *obj, const struct mosquitto_messa
 {
 	/* This blindly prints the payload, but the payload can be anything so take care. */
 	printf("%d - received: %s %d %s\n", msg->mid, msg->topic, msg->qos, (char *)msg->payload);
-	UJObject json = parseJSON((char *)msg->payload);
-	if (NULL != json)
+	if (check_prefix(msg->topic, METHOD_CALL_HEADER))
 	{
-		UploadConf *conf = parseArgs(json);
-		if (NULL != conf)
-		{
-			switch (conf->operation)
-			{
-			case PULL:
-				setupServ(conf->address, conf->user, conf->password);
-				uploadFile(conf->source, conf->destination);
-				cleanupServ();
-				printf("pull %s finished: %s -> %s\n", conf->methodId, conf->source, conf->destination);
-				sprintf(_buffer, RETURN_MSG_FORMAT, conf->methodId);
-				char pubTopic[PATH_MAX_LEN];
-				sprintf(pubTopic, METHOD_RETURN_HEADER"%s", msg->topic + IDS_INDEX);
-				printf("%s\n", pubTopic);
-				publish_msg(pubTopic, _buffer);
-				break;
-			case PUSH:
-				setupServ(conf->address, conf->user, conf->password);
-				downloadFile(conf->source, conf->destination);
-				cleanupServ();
-				printf("push %s finished: %s -> %s\n", conf->methodId, conf->source, conf->destination);
-				break;
-			default:
-				printf("operation not supported.\n");
-				break;
-			}
-			freeUploadConf(conf);
-		}
+		handleMethodCall(msg);
+	}
+	else if (check_prefix(msg->topic, METHOD_STATUS_HEADER))
+	{
+		handleMethodStatus(msg);
 	}
 }
 
@@ -223,8 +332,9 @@ int setupMqtt()
 {
 	const char *topicsToSub[] = {
 		METHOD_CALL_HEADER"DevID/ClientID",
+		METHOD_STATUS_HEADER"DevID/ClientID",
 	};
-	return initMqttFileTrans("pi-ubt.local", 1883, 60, topicsToSub, 1, on_mqtt_msg);
+	return initMqttFileTrans("pi-ubt.local", 1883, 60, topicsToSub, 2, on_mqtt_msg);
 }
 
 

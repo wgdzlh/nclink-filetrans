@@ -1,10 +1,15 @@
 
 #include<string>
+// #include<map>
+#include<sys/stat.h>
+
 #include "util/utils.h"
 #include "../ftp/ftplib.h"
 
 #include "filetrans.h"
-#define GUARD_NULL if(nullptr==ftp)connectFtpServ()
+
+#define PROGRESS_REPORT_BYTES 	10240000
+#define GUARD_NULL				if(nullptr==ftp)connectFtpServ()
 
 using namespace std;
 
@@ -13,16 +18,51 @@ static string hostAndPort;
 static string username;
 static string password;
 
+static size_t localFileSize;
+static size_t remoteFileSize;
+static bool uploading;
+// thread safe?
+// static std::map<string, double> progressPercents;
 
-void connectFtpServ()
+
+static void setLocalFileSize(const char *filename)
+{
+	struct stat st;
+	stat(filename, &st);
+	localFileSize = st.st_size;
+}
+
+
+static void setRemoteFileSize(const char *filename)
+{
+	int ret;
+	ftp->Size(filename, &ret, ftplib::image);
+	remoteFileSize = ret;
+}
+
+
+static int progressCallback(off64_t xfered, void *arg)
+{
+	printf("%ld bytes transed.\n", xfered);
+	if (uploading)
+		remoteFileSize = xfered;
+	else
+		localFileSize = xfered;
+	return 1;
+}
+
+
+static void connectFtpServ()
 {
 	ftp = new ftplib();
+	ftp->SetCallbackBytes(PROGRESS_REPORT_BYTES);
+	ftp->SetCallbackXferFunction(progressCallback);
 	ftp->Connect(hostAndPort.c_str());
 	ftp->Login(username.c_str(), password.c_str());
 }
 
 
-void disconnect()
+static void disconnect()
 {
 	if (nullptr != ftp)
 	{
@@ -38,6 +78,7 @@ void setupServ(const char *hostPort, const char *user, const char *pwd)
 	hostAndPort = hostPort;
 	username = user;
 	password = pwd;
+	// progressPercents[mtid] = .0;
 }
 
 
@@ -48,21 +89,44 @@ int listDir(const char *dir)
 	return 0;
 }
 
-int uploadFile(const char *localFile, const char * remoteFile)
+
+int uploadFile(const char *localFile, const char *remoteFile)
 {
 	GUARD_NULL;
+	setLocalFileSize(localFile);
+	remoteFileSize = 0;
+	uploading = true;
 	ftp->Put(localFile, remoteFile, ftplib::image);
 	return 0;
 }
 
-int downloadFile(const char *localFile, const char * remoteFile)
+
+int downloadFile(const char *localFile, const char *remoteFile)
 {
 	GUARD_NULL;
+	localFileSize = 0;
+	setRemoteFileSize(remoteFile);
+	uploading = false;
 	ftp->Get(localFile, remoteFile, ftplib::image);
 	return 0;
 }
 
+
+double getProgressPercent()
+{
+	if (nullptr != ftp)
+	{
+		// return progressPercents[mtid];
+		return uploading ?
+			remoteFileSize / (double)localFileSize :
+			localFileSize / (double)remoteFileSize;
+	}
+	return .0;
+}
+
+
 void cleanupServ()
 {
 	disconnect();
+	// progressPercents.erase(mtid);
 }

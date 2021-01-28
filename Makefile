@@ -6,7 +6,7 @@ OBJS = filetrans/filetrans.o ftp/ftplib.o json/ujdecode.o json/ultrajsondec.o mq
 C = gcc
 CC = g++
 CINC = -I./include
-CLIBS = -L./linux -lmosq
+CLIBS = -L./linux -lmosq -lpthread
 
 CFLAGS = -Wall -Wno-char-subscripts -O3
 CPPFLAGS = -std=c++11

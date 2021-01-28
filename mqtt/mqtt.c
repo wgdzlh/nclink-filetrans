@@ -11,8 +11,8 @@
 
 #define MAX_TOPICS 10
 
-static const char *TOPICS[MAX_TOPICS] = {NULL};
-static size_t NUM_TOPICS = 1;
+static const char *TOPICS[MAX_TOPICS];
+static size_t NUM_TOPICS;
 
 static struct mosquitto *mosq;
 
@@ -187,6 +187,7 @@ int initMqttFileTrans(const char *brokerAddress, const int port, const int keepa
 	mosquitto_publish_callback_set(mosq, on_publish);
 	mosquitto_subscribe_callback_set(mosq, on_subscribe);
 	mosquitto_message_callback_set(mosq, callback);
+	mosquitto_threaded_set(mosq, true);
 
 	/* Connect to test.mosquitto.org on port 1883, with a keepalive of 60 seconds.
 	 * This call makes the socket connection only, it does not complete the MQTT
@@ -216,6 +217,7 @@ int testMqtt()
 {
 	int rc;
 	TOPICS[0] = "example/temperature";
+	NUM_TOPICS = 1;
 
 	/* Required before calling other mosquitto functions */
 	mosquitto_lib_init();
