@@ -8,7 +8,7 @@
 #include "json/ujdecode.h"
 
 #define BUFFER_SIZE 1024
-#define MAX_PAYLOAD_SIZE BUFFER_SIZE*8
+#define SHORT_BUFFER_SIZE 256
 #define PATH_MAX_LEN 128
 #define MTID_MAX_LEN 32
 
@@ -200,48 +200,31 @@ void parseArgsToConf(UJObject input, const char *ids)
 }
 
 
-static inline void pubReturnMsg(const char *ids)
+static inline void pubReturnMsg(const char *ids, const char *retMsg)
 {
 	char pubTopic[PATH_MAX_LEN];
 	sprintf(pubTopic, METHOD_RETURN_HEADER"%s", ids);
 	printf("PUB: %s\n", pubTopic);
-	publish_msg(pubTopic, _buffer);
+	publish_msg(pubTopic, retMsg);
 }
 
 
 void returnMsg()
 {
 	sprintf(_buffer, RETURN_MSG_FORMAT, _conf->methodId);
-	pubReturnMsg(_conf->ids);
+	pubReturnMsg(_conf->ids, _buffer);
 }
 
 
 void statusMsg(const char *methodId, const char *ids)
 {
-	sprintf(_buffer, STATUS_MSG_FORMAT, methodId, getProgressPercent()*100);
-	pubReturnMsg(ids);
+	char msgBuffer[SHORT_BUFFER_SIZE];
+	double progressPercent = _conf != NULL && strcmp(methodId, _conf->methodId) == 0 ?
+		getProgressPercent()*100 : .0;
+	sprintf(msgBuffer, STATUS_MSG_FORMAT, methodId, progressPercent);
+	pubReturnMsg(ids, msgBuffer);
 }
 
-/*
-MsgInfo* getMsgInfo(const struct mosquitto_message *msg)
-{
-	MsgInfo *ret = (MsgInfo *)malloc(sizeof(MsgInfo));
-	ret->topic = strndup(msg->topic, PATH_MAX_LEN);
-	ret->payload = strndup(msg->payload, MAX_PAYLOAD_SIZE);
-	return ret;
-}
-
-
-void freeMsgInfo(MsgInfo *msg)
-{
-	if (NULL != msg)
-	{
-		free(msg->topic);
-		free(msg->payload);
-		free(msg);
-	}
-}
-*/
 
 static inline void action(int isPull)
 {
