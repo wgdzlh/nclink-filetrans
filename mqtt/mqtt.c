@@ -11,10 +11,10 @@
 
 #define MAX_TOPICS 10
 
-const char *TOPICS[MAX_TOPICS] = {NULL};
-size_t NUM_TOPICS = 1;
+static const char *TOPICS[MAX_TOPICS] = {NULL};
+static size_t NUM_TOPICS = 1;
 
-struct mosquitto *mosq;
+static struct mosquitto *mosq;
 
 
 /* Callback called when the client knows to the best of its abilities that a

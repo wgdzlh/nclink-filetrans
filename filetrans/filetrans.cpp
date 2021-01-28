@@ -8,10 +8,10 @@
 
 using namespace std;
 
-ftplib *ftp = nullptr;
-string hostAndPort;
-string username;
-string password;
+static ftplib *ftp = nullptr;
+static string hostAndPort;
+static string username;
+static string password;
 
 
 void connectFtpServ()

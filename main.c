@@ -6,7 +6,15 @@
 #include "mqtt/mqtt.h"
 #include "json/ujdecode.h"
 
-#define BUFFER_SIZE 40
+#define BUFFER_SIZE 1024
+#define PATH_MAX_LEN 128
+
+#define METHOD_CALL_HEADER		"Method/Call/"
+#define METHOD_RETURN_HEADER	"Method/Return/"
+#define IDS_INDEX 				12
+#define RETURN_MSG_FORMAT 		"{\"@id\": \"messageID\", \"id\": \"%s\",\"return\": \"OK\"}"
+
+static char _buffer[BUFFER_SIZE];
 
 
 typedef enum FileTransProtocol {
@@ -37,28 +45,9 @@ typedef struct UploadConf {
 } UploadConf;
 
 
-UJObject parseJSON(const char* input)
-{
-	size_t cbInput = strlen(input);
-	void *state;
-
-	UJObject obj = UJDecode(input, cbInput, NULL, &state);
-	if (NULL == obj) printf("Error: %s\n", UJGetError(state));
-
-	UJFree(state);
-	return obj;
-}
-
-
 UploadConf* getUploadConf()
 {
-	UploadConf *t = (UploadConf *)malloc(sizeof(UploadConf));
-	t->methodId = (char *)malloc(BUFFER_SIZE);
-	t->address = (char *)malloc(BUFFER_SIZE);
-	t->user = (char *)malloc(BUFFER_SIZE);
-	t->password = (char *)malloc(BUFFER_SIZE);
-	t->source = (char *)malloc(BUFFER_SIZE);
-	t->destination = (char *)malloc(BUFFER_SIZE);
+	UploadConf *t = (UploadConf *)calloc(sizeof(UploadConf), 1);
 	return t;
 }
 
@@ -78,9 +67,13 @@ void freeUploadConf(UploadConf *t)
 }
 
 
-void json2cs(UJObject input, char *output) {
+size_t json2cs(UJObject input, char **output) {
 	// sprintf(output, "%ls", UJReadString(input, NULL));
-	wcstombs(output, UJReadString(input, NULL), BUFFER_SIZE);
+	size_t ret = 0;
+	wcstombs(_buffer, UJReadString(input, &ret), BUFFER_SIZE);
+	*output = strndup(_buffer, BUFFER_SIZE);
+	printf("chars converted: %ld, ret len: %ld\n", ret, strlen(*output));
+	return ret;
 }
 
 
@@ -116,16 +109,30 @@ FileTransOperation json2Operation(UJObject input)
 }
 
 
-void setUploadConf(UploadConf *t, UJObject protocol, UJObject address,
+void setUploadConf(UploadConf *t, UJObject mtid, UJObject protocol, UJObject address,
 		UJObject user, UJObject pwd, UJObject src, UJObject dst, UJObject op)
 {
 	t->fileTransProtocol = json2Protocol(protocol);
-	json2cs(address, t->address);
-	json2cs(user, t->user);
-	json2cs(pwd, t->password);
-	json2cs(src, t->source);
-	json2cs(dst, t->destination);
+	json2cs(mtid, &t->methodId);
+	json2cs(address, &t->address);
+	json2cs(user, &t->user);
+	json2cs(pwd, &t->password);
+	json2cs(src, &t->source);
+	json2cs(dst, &t->destination);
 	t->operation = json2Operation(op);
+}
+
+
+UJObject parseJSON(const char* input)
+{
+	size_t cbInput = strlen(input);
+	void *state;
+
+	UJObject obj = UJDecode(input, cbInput, NULL, &state);
+	if (NULL == obj) printf("Error: %s\n", UJGetError(state));
+
+	UJFree(state);
+	return obj;
 }
 
 
@@ -133,19 +140,17 @@ UploadConf* parseArgs(UJObject input)
 {
 	UploadConf *ret = NULL;
 	const wchar_t *jsonKeys[] = {
-		L"@id",
+		// L"@id",
 		L"id",
 		L"args",
 	};
 	UJObject
-		id,
+		// id,
 		mtid,
 		args;
-	if (UJObjectUnpack(input, 3, "SSO", jsonKeys, &id, &mtid, &args) == 3)
+	if (UJObjectUnpack(input, 2, "SO", jsonKeys, /*&id,*/ &mtid, &args) == 2)
 	{
-		printf("mtid: %ls\n", UJReadString(mtid, NULL));
-		ret = getUploadConf();
-		json2cs(mtid, ret->methodId);
+		// printf("mtid: %ls\n", UJReadString(mtid, NULL));
 		const wchar_t *argsKeys[] = {
 			L"protocol",
 			L"address",
@@ -167,12 +172,8 @@ UploadConf* parseArgs(UJObject input)
 		if (UJObjectUnpack(args, 7, "SSSSSSS", argsKeys,
 				&protocol, &address, &user, &password, &source, &destination, &operation) == 7)
 		{
-			setUploadConf(ret, protocol, address, user, password, source, destination, operation);
-		}
-		else
-		{
-			freeUploadConf(ret);
-			ret = NULL;
+			ret = getUploadConf();
+			setUploadConf(ret, mtid, protocol, address, user, password, source, destination, operation);
 		}
 	}
 	return ret;
@@ -196,19 +197,17 @@ void on_mqtt_msg(struct mosquitto *mosq, void *obj, const struct mosquitto_messa
 				uploadFile(conf->source, conf->destination);
 				cleanupServ();
 				printf("pull %s finished: %s -> %s\n", conf->methodId, conf->source, conf->destination);
-				char outMsg[BUFFER_SIZE*2];
-				sprintf(outMsg, "{\"@id\": \"messageID\", \"id\": \"%s\",\"return\": \"OK\"}", conf->methodId);
-				const char *ids = msg->topic + 12;
-				char buff[BUFFER_SIZE];
-				sprintf(buff, "Method/Return/%s", ids);
-				printf("%s\n", buff);
-				publish_msg(buff, outMsg);
+				sprintf(_buffer, RETURN_MSG_FORMAT, conf->methodId);
+				char pubTopic[PATH_MAX_LEN];
+				sprintf(pubTopic, METHOD_RETURN_HEADER"%s", msg->topic + IDS_INDEX);
+				printf("%s\n", pubTopic);
+				publish_msg(pubTopic, _buffer);
 				break;
 			case PUSH:
 				setupServ(conf->address, conf->user, conf->password);
 				downloadFile(conf->source, conf->destination);
-				printf("push finished: %s -> %s\n", conf->source, conf->destination);
 				cleanupServ();
+				printf("push %s finished: %s -> %s\n", conf->methodId, conf->source, conf->destination);
 				break;
 			default:
 				printf("operation not supported.\n");
@@ -223,7 +222,7 @@ void on_mqtt_msg(struct mosquitto *mosq, void *obj, const struct mosquitto_messa
 int setupMqtt()
 {
 	const char *topicsToSub[] = {
-		"Method/Call/DevID/ClientID",
+		METHOD_CALL_HEADER"DevID/ClientID",
 	};
 	return initMqttFileTrans("pi-ubt.local", 1883, 60, topicsToSub, 1, on_mqtt_msg);
 }
