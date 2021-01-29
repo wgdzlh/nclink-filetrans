@@ -26,23 +26,6 @@ static char _buffer[BUFFER_SIZE];
 static pthread_t backgroundThread = 0;
 
 
-typedef enum FileTransProtocol {
-	FTP = 0,
-	SFTP,
-	UNAVAILABLE
-} FileTransProtocol;
-
-
-typedef enum FileTransOperation {
-	PUSH = 0,
-	PULL,
-	ADD,
-	DEL,
-	LIST,
-	UNDEFINDED
-} FileTransOperation;
-
-
 typedef struct MethodConf {
 	FileTransProtocol fileTransProtocol;
 	char *ids;
@@ -56,10 +39,10 @@ typedef struct MethodConf {
 } MethodConf;
 
 
-typedef struct MsgInfo {
-	char *topic;
-	char *payload;
-} MsgInfo;
+// typedef struct MsgInfo {
+// 	char *topic;
+// 	char *payload;
+// } MsgInfo;
 
 
 static MethodConf *_conf;
@@ -228,7 +211,7 @@ void statusMsg(const char *methodId, const char *ids)
 
 static inline void action(int isPull)
 {
-	setupServ(_conf->address, _conf->user, _conf->password);
+	setupServ(_conf->address, _conf->user, _conf->password, _conf->fileTransProtocol);
 	(isPull ? uploadFile : downloadFile)(_conf->source, _conf->destination);
 	cleanupServ();
 	printf("%s %s finished: %s -> %s\n", isPull ? "pull" : "push",

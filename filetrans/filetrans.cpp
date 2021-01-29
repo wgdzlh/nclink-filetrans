@@ -1,7 +1,8 @@
 
-#include<string>
+#include <iostream>
+#include <string>
 // #include<map>
-#include<sys/stat.h>
+#include <sys/stat.h>
 
 #include "util/utils.h"
 #include "../ftp/ftplib.h"
@@ -9,7 +10,7 @@
 #include "filetrans.h"
 
 #define PROGRESS_REPORT_BYTES 	10240000
-#define GUARD_NULL				if(nullptr==ftp)connectFtpServ()
+#define GUARD_NULL				if(nullptr==ftp)connectServ()
 
 using namespace std;
 
@@ -17,6 +18,7 @@ static ftplib *ftp = nullptr;
 static string hostAndPort;
 static string username;
 static string password;
+static FileTransProtocol protocol;
 
 static size_t localFileSize;
 static size_t remoteFileSize;
@@ -62,22 +64,45 @@ static void connectFtpServ()
 }
 
 
+static void connectServ()
+{
+	switch (protocol)
+	{
+	case FTP:
+		connectFtpServ();
+		break;
+	default:
+		std::cout <<"File trans protocol not supported yet, abort.\n"
+				  << std::endl;
+		break;
+	}
+}
+
+
 static void disconnect()
 {
 	if (nullptr != ftp)
 	{
-		ftp->Quit();
+		switch (protocol)
+		{
+		case FTP:
+			ftp->Quit();
+			break;
+		default:
+			break;
+		}
 		delete ftp;
 		ftp = nullptr;
 	}
 }
 
 
-void setupServ(const char *hostPort, const char *user, const char *pwd)
+void setupServ(const char *hostPort, const char *user, const char *pwd, FileTransProtocol proto)
 {
 	hostAndPort = hostPort;
 	username = user;
 	password = pwd;
+	protocol = proto;
 	// progressPercents[mtid] = .0;
 }
 
@@ -101,7 +126,7 @@ int uploadFile(const char *localFile, const char *remoteFile)
 }
 
 
-int downloadFile(const char *localFile, const char *remoteFile)
+int downloadFile(const char *remoteFile, const char *localFile)
 {
 	GUARD_NULL;
 	localFileSize = 0;

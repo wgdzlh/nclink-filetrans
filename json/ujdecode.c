@@ -685,28 +685,29 @@ int UJObjectUnpack(UJObject objObj, int keys, const char *format, const wchar_t 
 	int found = 0;
 	int ki;
 	int ks = 0;
+	va_list args;
 	const wchar_t *keyNames[64];
-  va_list args;
-  UJObject *outValue;
+	UJObject *outValues[64];
 
-  va_start(args, _keyNames);
-
-  if (!UJIsObject(objObj))
+	if (!UJIsObject(objObj))
 	{
 		return 0;
 	}
-
-	iter = UJBeginObject(objObj);
 
 	if (keys > 64)
 	{
 		return -1;
 	}
 
+	va_start(args, _keyNames);
 	for (ki = 0; ki < keys; ki ++)
 	{
 		keyNames[ki] = _keyNames[ki];
+		outValues[ki] = va_arg(args, UJObject *);
 	}
+	va_end(args);
+
+	iter = UJBeginObject(objObj);
 
 	while (UJIterObject(&iter, &key, &value))
 	{
@@ -730,23 +731,19 @@ int UJObjectUnpack(UJObject objObj, int keys, const char *format, const wchar_t 
 			}
 
 			found ++;
-
-      outValue = va_arg(args, UJObject);
-
-      if (outValue != NULL)
-      {
-  			*outValue = value;
-      }
+			if (outValues[ki] != NULL)
+			{
+				*outValues[ki] = value;
+			}
 			keyNames[ki] = NULL;
 
-			if (ki == ks)
+			while (ks < keys && keyNames[ks] == NULL)
 			{
 				ks ++;
 			}
+			break;
 		}
 	}
-
-  va_end(args);
 
 	return found;
 }
