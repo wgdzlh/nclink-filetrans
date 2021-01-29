@@ -2,7 +2,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
+
+#include "os/os.h"
 #include "filetrans/filetrans.h"
 #include "mqtt/mqtt.h"
 #include "json/ujdecode.h"
@@ -15,15 +16,10 @@
 #define METHOD_CALL_HEADER		"Method/Call/"
 #define METHOD_RETURN_HEADER	"Method/Return/"
 #define METHOD_STATUS_HEADER	"Method/Status/"
-#define CALL_IDS_INDEX 			12
-#define STATUS_IDS_INDEX		14
-#define RETURN_MSG_FORMAT 		"{\"@id\": \"messageID\", \"id\": \"%s\",\"return\": \"OK\"}"
-#define STATUS_MSG_FORMAT 		"{\"@id\": \"messageID\", \"id\": \"%s\",\"status\": \"executing\", \"progress\": %.0f}"
-
-static char _buffer[BUFFER_SIZE];
-
-
-static pthread_t backgroundThread = 0;
+#define CALL_IDS_INDEX			(sizeof(METHOD_CALL_HEADER)-1)
+#define STATUS_IDS_INDEX		(sizeof(METHOD_STATUS_HEADER)-1)
+#define RETURN_MSG_FORMAT		"{\"@id\": \"messageID\", \"id\": \"%s\",\"return\": \"%s\"}"
+#define STATUS_MSG_FORMAT		"{\"@id\": \"messageID\", \"id\": \"%s\",\"status\": \"%s\", \"progress\": %.0f}"
 
 
 typedef struct MethodConf {
@@ -39,13 +35,29 @@ typedef struct MethodConf {
 } MethodConf;
 
 
-// typedef struct MsgInfo {
-// 	char *topic;
-// 	char *payload;
-// } MsgInfo;
+typedef enum OpResult {
+	OK = 0,
+	WRONG_JSON,
+	WRONG_ARGS,
+	WRONG_PROTO,
+	EXEC,
+	NOT_EXEC,
+} OpResult;
+
+
+static const char *methodResults[] = {
+	"OK",
+	"WRONG_JSON",
+	"WRONG_ARGS",
+	"WRONG_PROTO",
+	"EXECUTING",
+	"NOT_EXECUTE",
+};
 
 
 static MethodConf *_conf;
+static char _buffer[BUFFER_SIZE];
+static Thread backgroundThread;
 
 
 static inline MethodConf* getUploadConf()
@@ -76,7 +88,7 @@ size_t json2cs(UJObject input, char **output) {
 	size_t ret = 0;
 	wcstombs(_buffer, UJReadString(input, &ret), BUFFER_SIZE);
 	*output = strndup(_buffer, BUFFER_SIZE);
-	printf("chars converted: %ld, ret len: %ld\n", ret, strlen(*output));
+	// printf("chars converted: %ld, ret len: %ld\n", ret, strlen(*output));
 	return ret;
 }
 
@@ -133,7 +145,7 @@ UJObject parseJSON(const char* input)
 	void *state;
 
 	UJObject obj = UJDecode(input, cbInput, NULL, &state);
-	if (NULL == obj) printf("Error: %s\n", UJGetError(state));
+	if (NULL == obj) printf("JSON Error: %s\n", UJGetError(state));
 
 	UJFree(state);
 	return obj;
@@ -192,32 +204,43 @@ static inline void pubReturnMsg(const char *ids, const char *retMsg)
 }
 
 
-void returnMsg()
+void returnMsg(OpResult oret, const char *methodId, const char *ids)
 {
-	sprintf(_buffer, RETURN_MSG_FORMAT, _conf->methodId);
-	pubReturnMsg(_conf->ids, _buffer);
+	sprintf(_buffer, RETURN_MSG_FORMAT, methodId, methodResults[oret]);
+	pubReturnMsg(ids, _buffer);
 }
 
 
 void statusMsg(const char *methodId, const char *ids)
 {
+	const char *status = methodResults[NOT_EXEC];
+	double progressPercent = .0;
 	char msgBuffer[SHORT_BUFFER_SIZE];
-	double progressPercent = _conf != NULL && strcmp(methodId, _conf->methodId) == 0 ?
-		getProgressPercent()*100 : .0;
-	sprintf(msgBuffer, STATUS_MSG_FORMAT, methodId, progressPercent);
+
+	if (_conf != NULL && strcmp(methodId, _conf->methodId) == 0)
+	{
+		progressPercent = getProgressPercent() * 100;
+		status = methodResults[EXEC];
+	}
+	sprintf(msgBuffer, STATUS_MSG_FORMAT, methodId, status, progressPercent);
 	pubReturnMsg(ids, msgBuffer);
 }
 
 
 static inline void action(int isPull)
 {
-	setupServ(_conf->address, _conf->user, _conf->password, _conf->fileTransProtocol);
+	if (0 != setupServ(_conf->address, _conf->user, _conf->password, _conf->fileTransProtocol))
+	{
+		returnMsg(WRONG_PROTO, _conf->methodId, _conf->ids);
+		return;
+	}
 	(isPull ? uploadFile : downloadFile)(_conf->source, _conf->destination);
 	cleanupServ();
 	printf("%s %s finished: %s -> %s\n", isPull ? "pull" : "push",
 		_conf->methodId, _conf->source, _conf->destination);
-	returnMsg();
+	returnMsg(OK, _conf->methodId, _conf->ids);
 }
+
 
 void* fileOps(void *arg)
 {
@@ -238,25 +261,30 @@ void* fileOps(void *arg)
 }
 
 
-void handleMethodCall(const struct mosquitto_message *msg)
+OpResult handleMethodCall(const struct mosquitto_message *msg)
 {
 	UJObject json = parseJSON((char *)msg->payload);
 	if (NULL != json)
 	{
 		if (NULL != _conf)
 		{
-			pthread_join(backgroundThread, NULL);
+			ThreadJoin(backgroundThread, NULL);
 		}
 		parseArgsToConf(json, msg->topic+CALL_IDS_INDEX);
 		if (NULL != _conf)
 		{
-			pthread_create(&backgroundThread, NULL, fileOps, NULL);
+			ThreadCreate(&backgroundThread, NULL, fileOps, NULL);
+		} else {
+			return WRONG_ARGS;
 		}
+	} else {
+		return WRONG_JSON;
 	}
+	return OK;
 }
 
 
-void handleMethodStatus(const struct mosquitto_message *msg)
+OpResult handleMethodStatus(const struct mosquitto_message *msg)
 {
 	UJObject json = parseJSON((char *)msg->payload);
 	if (NULL != json)
@@ -268,8 +296,13 @@ void handleMethodStatus(const struct mosquitto_message *msg)
 			char mtidBuffer[MTID_MAX_LEN];
 			wcstombs(mtidBuffer, UJReadString(mtid, NULL), MTID_MAX_LEN);
 			statusMsg(mtidBuffer, msg->topic+STATUS_IDS_INDEX);
+		} else {
+			return WRONG_ARGS;
 		}
+	} else {
+		return WRONG_JSON;
 	}
+	return OK;
 }
 
 
@@ -283,13 +316,22 @@ void on_mqtt_msg(struct mosquitto *mosq, void *obj, const struct mosquitto_messa
 {
 	/* This blindly prints the payload, but the payload can be anything so take care. */
 	printf("%d - received: %s %d %s\n", msg->mid, msg->topic, msg->qos, (char *)msg->payload);
+	OpResult oret;
 	if (check_prefix(msg->topic, METHOD_CALL_HEADER))
 	{
-		handleMethodCall(msg);
+		oret = handleMethodCall(msg);
+		if (OK != oret)
+		{
+			returnMsg(oret, "-1", msg->topic+CALL_IDS_INDEX);
+		}
 	}
 	else if (check_prefix(msg->topic, METHOD_STATUS_HEADER))
 	{
-		handleMethodStatus(msg);
+		oret = handleMethodStatus(msg);
+		if (OK != oret)
+		{
+			statusMsg("-1", msg->topic+STATUS_IDS_INDEX);
+		}
 	}
 }
 

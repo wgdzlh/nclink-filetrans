@@ -97,13 +97,17 @@ static void disconnect()
 }
 
 
-void setupServ(const char *hostPort, const char *user, const char *pwd, FileTransProtocol proto)
+int setupServ(const char *hostPort, const char *user, const char *pwd, FileTransProtocol proto)
 {
+	if (FTP != proto) {
+		return -1;
+	}
 	hostAndPort = hostPort;
 	username = user;
 	password = pwd;
 	protocol = proto;
 	// progressPercents[mtid] = .0;
+	return 0;
 }
 
 

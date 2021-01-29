@@ -23,7 +23,7 @@ typedef enum FileTransOperation {
 extern "C" {
 #endif
 
-void setupServ(const char *hostPort, const char *user, const char *pwd, FileTransProtocol proto);
+int setupServ(const char *hostPort, const char *user, const char *pwd, FileTransProtocol proto);
 int uploadFile(const char *localFile, const char * remoteFile);
 int downloadFile(const char *localFile, const char * remoteFile);
 int listDir(const char *dir);
