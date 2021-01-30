@@ -815,6 +815,7 @@ int ftplib::FtpOpenPort(ftphandle *nControl, ftphandle **nData, transfermode mod
 	{
 		FtpClose(*nData);
 		*nData = NULL;
+		free(ctrl);
 		return -1;
 	}
 

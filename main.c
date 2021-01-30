@@ -62,7 +62,7 @@ static Thread backgroundThread;
 
 static inline MethodConf* getUploadConf()
 {
-	return (MethodConf *)calloc(sizeof(MethodConf), 1);
+	return (MethodConf *)calloc(1, sizeof(MethodConf));
 }
 
 
@@ -84,11 +84,9 @@ void freeUploadConf()
 
 
 size_t json2cs(UJObject input, char **output) {
-	// sprintf(output, "%ls", UJReadString(input, NULL));
 	size_t ret = 0;
 	wcstombs(_buffer, UJReadString(input, &ret), BUFFER_SIZE);
-	*output = strndup(_buffer, BUFFER_SIZE);
-	// printf("chars converted: %ld, ret len: %ld\n", ret, strlen(*output));
+	*output = strdup(_buffer);
 	return ret;
 }
 
@@ -188,7 +186,7 @@ void parseArgsToConf(UJObject input, const char *ids)
 				&protocol, &address, &user, &password, &source, &destination, &operation) == 7)
 		{
 			_conf = getUploadConf();
-			_conf->ids = strndup(ids, PATH_MAX_LEN);
+			_conf->ids = strdup(ids);
 			setUploadConf(mtid, protocol, address, user, password, source, destination, operation);
 		}
 	}
@@ -198,7 +196,7 @@ void parseArgsToConf(UJObject input, const char *ids)
 static inline void pubReturnMsg(const char *ids, const char *retMsg)
 {
 	char pubTopic[PATH_MAX_LEN];
-	sprintf(pubTopic, METHOD_RETURN_HEADER"%s", ids);
+	snprintf(pubTopic, PATH_MAX_LEN, METHOD_RETURN_HEADER"%s", ids);
 	printf("PUB: %s\n", pubTopic);
 	publish_msg(pubTopic, retMsg);
 }
@@ -206,7 +204,7 @@ static inline void pubReturnMsg(const char *ids, const char *retMsg)
 
 void returnMsg(OpResult oret, const char *methodId, const char *ids)
 {
-	sprintf(_buffer, RETURN_MSG_FORMAT, methodId, methodResults[oret]);
+	snprintf(_buffer, BUFFER_SIZE, RETURN_MSG_FORMAT, methodId, methodResults[oret]);
 	pubReturnMsg(ids, _buffer);
 }
 
@@ -222,7 +220,7 @@ void statusMsg(const char *methodId, const char *ids)
 		progressPercent = getProgressPercent() * 100;
 		status = methodResults[EXEC];
 	}
-	sprintf(msgBuffer, STATUS_MSG_FORMAT, methodId, status, progressPercent);
+	snprintf(msgBuffer, SHORT_BUFFER_SIZE, STATUS_MSG_FORMAT, methodId, status, progressPercent);
 	pubReturnMsg(ids, msgBuffer);
 }
 
