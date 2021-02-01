@@ -132,10 +132,10 @@ ftplib::~ftplib()
 }
 
 void ftplib::sprint_rest(char *buf, off64_t offset) {
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
 		sprintf(buf,"REST %lld",offset);
 #else
-		sprintf(buf,"REST %lld",offset);
+		sprintf(buf,"REST %ld",offset);
 #endif
 }
 
@@ -406,7 +406,6 @@ int ftplib::Connect(const char *host)
 	struct hostent *phe;
 	struct servent *pse;
 	int on=1;
-	//int ret;
 	char *lhost;
 	char *pnum;
 
@@ -449,7 +448,7 @@ int ftplib::Connect(const char *host)
 #if defined(_WIN32)
 	if ((sin.sin_addr.s_addr = inet_addr(lhost)) == -1)
 #else
-	ret = inet_aton(lhost, &sin.sin_addr);
+	int ret = inet_aton(lhost, &sin.sin_addr);
 	if (ret == 0)
 #endif
 	{
