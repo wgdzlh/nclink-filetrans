@@ -7,6 +7,10 @@
 
 #include "njdecode.h"
 
+#ifdef _WIN32
+#define strdup _strdup
+#endif
+
 
 using json_t = nlohmann::json;
 using value_t = json_t::value_t;

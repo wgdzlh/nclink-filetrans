@@ -112,11 +112,11 @@ struct ftphandle {
 	bool correctpasv;
 };
 
-#if defined(_WIN32)
-class DLLIMPORT ftplib {
-#else
+//#if defined(_WIN32)
+//class DLLIMPORT ftplib {
+//#else
 class ftplib {
-#endif
+//#endif
 public:
 
 	enum accesstype {

@@ -72,7 +72,7 @@ void on_connect(struct mosquitto *mosq, void *obj, int reason_code)
 	/* Making subscriptions in the on_connect() callback means that if the
 	 * connection drops and is automatically resumed by the client, then the
 	 * subscriptions will be recreated when the client reconnects. */
-	for (int i = 0; i < NUM_TOPICS; i++) {
+	for (size_t i = 0; i < NUM_TOPICS; i++) {
 		rc = mosquitto_subscribe(mosq, NULL, TOPICS[i], 1);
 		if(rc != MOSQ_ERR_SUCCESS){
 			fprintf(stderr, "Error subscribing: %s\n", mosquitto_strerror(rc));
@@ -126,7 +126,7 @@ int initMqttFileTrans(const char *brokerAddress, const int port, const int keepa
 		return 1;
 	}
 	NUM_TOPICS = numTopics;
-	for (int i = 0; i < NUM_TOPICS; i++) {
+	for (size_t i = 0; i < NUM_TOPICS; i++) {
 		TOPICS[i] = topics[i];
 	}
 

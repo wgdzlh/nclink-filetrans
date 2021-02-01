@@ -135,7 +135,7 @@ void ftplib::sprint_rest(char *buf, off64_t offset) {
 #if defined(__APPLE__)
 		sprintf(buf,"REST %lld",offset);
 #else
-		sprintf(buf,"REST %ld",offset);
+		sprintf(buf,"REST %lld",offset);
 #endif
 }
 
@@ -406,7 +406,7 @@ int ftplib::Connect(const char *host)
 	struct hostent *phe;
 	struct servent *pse;
 	int on=1;
-	int ret;
+	//int ret;
 	char *lhost;
 	char *pnum;
 

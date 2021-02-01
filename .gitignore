@@ -2,3 +2,6 @@
 other/
 bin/
 .vscode/
+.vs/
+Debug/
+x64/
