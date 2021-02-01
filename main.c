@@ -6,10 +6,9 @@
 #include "os/os.h"
 #include "filetrans/filetrans.h"
 #include "mqtt/mqtt.h"
-#include "json/ujdecode.h"
+#include "json/njdecode.h"
 
-#define BUFFER_SIZE 1024
-#define SHORT_BUFFER_SIZE 256
+#define MSG_BUFFER_SIZE 256
 #define PATH_MAX_LEN 128
 #define MTID_MAX_LEN 32
 
@@ -56,8 +55,7 @@ static const char *methodResults[] = {
 
 
 static MethodConf *_conf;
-static char _buffer[BUFFER_SIZE];
-static Thread backgroundThread;
+static Thread _backgroundThread;
 
 
 static inline MethodConf* getUploadConf()
@@ -83,97 +81,69 @@ void freeUploadConf()
 }
 
 
-size_t json2cs(UJObject input, char **output) {
-	size_t ret = 0;
-	wcstombs(_buffer, UJReadString(input, &ret), BUFFER_SIZE);
-	*output = strdup(_buffer);
-	return ret;
+static inline void json2cs(const NJObject input, char **output) {
+	NJReadString(output, input);
 }
 
 
-FileTransProtocol json2Protocol(UJObject input)
+void setUploadConf(NJObject mtid, NJObject protocol, NJObject address,
+		NJObject user, NJObject pwd, NJObject src, NJObject dst, NJObject op)
 {
-	const wchar_t *protocol = UJReadString(input, NULL);
-	if (wcscmp(protocol, L"FTP") == 0)
-	{
-		return FTP;
-	} else if (wcscmp(protocol, L"SFTP") == 0)
-	{
-		return SFTP;
-	} else
-	{
-		return UNAVAILABLE;
-	}
-}
-
-
-FileTransOperation json2Operation(UJObject input)
-{
-	const wchar_t *op = UJReadString(input, NULL);
-	if (wcscmp(op, L"pull") == 0)
-	{
-		return PULL;
-	} else if (wcscmp(op, L"push") == 0)
-	{
-		return PUSH;
-	} else
-	{
-		return UNDEFINDED;
-	}
-}
-
-
-void setUploadConf(UJObject mtid, UJObject protocol, UJObject address,
-		UJObject user, UJObject pwd, UJObject src, UJObject dst, UJObject op)
-{
-	_conf->fileTransProtocol = json2Protocol(protocol);
+	char *proto, *opr;
 	json2cs(mtid, &_conf->methodId);
+	json2cs(protocol, &proto);
 	json2cs(address, &_conf->address);
 	json2cs(user, &_conf->user);
 	json2cs(pwd, &_conf->password);
 	json2cs(src, &_conf->source);
 	json2cs(dst, &_conf->destination);
-	_conf->operation = json2Operation(op);
+	json2cs(op, &opr);
+	_conf->fileTransProtocol = cs2Protocol(proto);
+	_conf->operation = cs2Operation(opr);
+	free(proto);
+	free(opr);
 }
 
 
-UJObject parseJSON(const char* input)
+void printConf()
 {
-	size_t cbInput = strlen(input);
-	void *state;
+	printf("\"%s,%s,%d,%d,%s,%s,%s,%s,%s\"\n", _conf->ids, _conf->methodId, _conf->fileTransProtocol, _conf->operation,
+			_conf->address, _conf->user, _conf->password, _conf->source, _conf->destination);
+}
 
-	UJObject obj = UJDecode(input, cbInput, NULL, &state);
-	if (NULL == obj) printf("JSON Error: %s\n", UJGetError(state));
 
-	UJFree(state);
+NJObject parseJSON(const char *input)
+{
+	NJObject obj = NJDecode(input);
+	if (NULL == obj) printf("JSON format error.\n");
 	return obj;
 }
 
 
-void parseArgsToConf(UJObject input, const char *ids)
+void parseArgsToConf(NJObject input, const char *ids)
 {
-	const wchar_t *jsonKeys[] = {
-		// L"@id",
-		L"id",
-		L"args",
+	const char *jsonKeys[] = {
+		// "@id",
+		"id",
+		"args",
 	};
-	UJObject
+	NJObject
 		// id,
 		mtid,
 		args;
-	if (UJObjectUnpack(input, 2, "SO", jsonKeys, /*&id,*/ &mtid, &args) == 2)
+	if (NJObjectUnpack(input, "SO", jsonKeys, /*&id,*/ &mtid, &args) == 2)
 	{
-		// printf("mtid: %ls\n", UJReadString(mtid, NULL));
-		const wchar_t *argsKeys[] = {
-			L"protocol",
-			L"address",
-			L"user",
-			L"password",
-			L"source",
-			L"destination",
-			L"operation",
+		// printf("mtid: %ls\n", NJReadString(mtid, NULL));
+		const char *argsKeys[] = {
+			"protocol",
+			"address",
+			"user",
+			"password",
+			"source",
+			"destination",
+			"operation",
 		};
-    	UJObject
+    	NJObject
 			protocol,
 			address,
 			user,
@@ -182,12 +152,13 @@ void parseArgsToConf(UJObject input, const char *ids)
 			destination,
 			operation;
 
-		if (UJObjectUnpack(args, 7, "SSSSSSS", argsKeys,
+		if (NJObjectUnpack(args, "SSSSSSS", argsKeys,
 				&protocol, &address, &user, &password, &source, &destination, &operation) == 7)
 		{
 			_conf = getUploadConf();
 			_conf->ids = strdup(ids);
 			setUploadConf(mtid, protocol, address, user, password, source, destination, operation);
+			printConf();
 		}
 	}
 }
@@ -204,24 +175,25 @@ static inline void pubReturnMsg(const char *ids, const char *retMsg)
 
 void returnMsg(OpResult oret, const char *methodId, const char *ids)
 {
-	snprintf(_buffer, BUFFER_SIZE, RETURN_MSG_FORMAT, methodId, methodResults[oret]);
-	pubReturnMsg(ids, _buffer);
+	static char returnMsgBuffer[MSG_BUFFER_SIZE];
+	snprintf(returnMsgBuffer, MSG_BUFFER_SIZE, RETURN_MSG_FORMAT, methodId, methodResults[oret]);
+	pubReturnMsg(ids, returnMsgBuffer);
 }
 
 
-void statusMsg(const char *methodId, const char *ids)
+void statusMsg(OpResult oret, const char *methodId, const char *ids)
 {
-	const char *status = methodResults[NOT_EXEC];
+	static char statusMsgBuffer[MSG_BUFFER_SIZE];
+	const char *status = methodResults[oret];
 	double progressPercent = .0;
-	char msgBuffer[SHORT_BUFFER_SIZE];
 
-	if (_conf != NULL && strcmp(methodId, _conf->methodId) == 0)
+	if (oret == NOT_EXEC && _conf != NULL && strcmp(methodId, _conf->methodId) == 0)
 	{
 		progressPercent = getProgressPercent() * 100;
 		status = methodResults[EXEC];
 	}
-	snprintf(msgBuffer, SHORT_BUFFER_SIZE, STATUS_MSG_FORMAT, methodId, status, progressPercent);
-	pubReturnMsg(ids, msgBuffer);
+	snprintf(statusMsgBuffer, MSG_BUFFER_SIZE, STATUS_MSG_FORMAT, methodId, status, progressPercent);
+	pubReturnMsg(ids, statusMsgBuffer);
 }
 
 
@@ -261,46 +233,53 @@ void* fileOps(void *arg)
 
 OpResult handleMethodCall(const struct mosquitto_message *msg)
 {
-	UJObject json = parseJSON((char *)msg->payload);
+	OpResult ret;
+	NJObject json = parseJSON((char *)msg->payload);
 	if (NULL != json)
 	{
 		if (NULL != _conf)
 		{
-			ThreadJoin(backgroundThread, NULL);
+			ThreadJoin(_backgroundThread, NULL);
 		}
 		parseArgsToConf(json, msg->topic+CALL_IDS_INDEX);
 		if (NULL != _conf)
 		{
-			ThreadCreate(&backgroundThread, NULL, fileOps, NULL);
+			ThreadCreate(&_backgroundThread, NULL, fileOps, NULL);
+			ret = OK;
 		} else {
-			return WRONG_ARGS;
+			ret = WRONG_ARGS;
 		}
 	} else {
-		return WRONG_JSON;
+		ret = WRONG_JSON;
 	}
-	return OK;
+	NJFree(&json);
+	return ret;
 }
 
 
 OpResult handleMethodStatus(const struct mosquitto_message *msg)
 {
-	UJObject json = parseJSON((char *)msg->payload);
+	OpResult ret;
+	NJObject json = parseJSON((char *)msg->payload);
 	if (NULL != json)
 	{
-		const wchar_t *jsonKeys[] = { L"id" };
-		UJObject mtid;
-		if (UJObjectUnpack(json, 1, "S", jsonKeys, /*&id,*/ &mtid) == 1)
+		const char *jsonKeys[] = { "id" };
+		NJObject mtid;
+		if (NJObjectUnpack(json, "S", jsonKeys, /*&id,*/ &mtid) == 1)
 		{
-			char mtidBuffer[MTID_MAX_LEN];
-			wcstombs(mtidBuffer, UJReadString(mtid, NULL), MTID_MAX_LEN);
-			statusMsg(mtidBuffer, msg->topic+STATUS_IDS_INDEX);
+			char *mtidcs;
+			json2cs(mtid, &mtidcs);
+			statusMsg(NOT_EXEC, mtidcs, msg->topic+STATUS_IDS_INDEX);
+			free(mtidcs);
+			ret = OK;
 		} else {
-			return WRONG_ARGS;
+			ret = WRONG_ARGS;
 		}
 	} else {
-		return WRONG_JSON;
+		ret = WRONG_JSON;
 	}
-	return OK;
+	NJFree(&json);
+	return ret;
 }
 
 
@@ -328,7 +307,7 @@ void on_mqtt_msg(struct mosquitto *mosq, void *obj, const struct mosquitto_messa
 		oret = handleMethodStatus(msg);
 		if (OK != oret)
 		{
-			statusMsg("-1", msg->topic+STATUS_IDS_INDEX);
+			statusMsg(oret, "-1", msg->topic+STATUS_IDS_INDEX);
 		}
 	}
 }

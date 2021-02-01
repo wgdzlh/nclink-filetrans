@@ -25,15 +25,20 @@
 #ifndef FTPLIB_H
 #define FTPLIB_H
 
-#if defined(_WIN32)
+#ifdef _WIN32
 
-#if BUILDING_DLL
+#ifdef BUILDING_DLL
 # define DLLIMPORT __declspec (dllexport)
 #else /* Not BUILDING_DLL */
 # define DLLIMPORT __declspec (dllimport)
 #endif /* Not BUILDING_DLL */
 
 #include <time.h>
+#include <winsock.h>
+#define off64_t __int64
+#define fopen64 fopen
+#define fseeko64 _fseeki64
+
 #endif
 
 #ifndef _WIN32

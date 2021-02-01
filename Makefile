@@ -1,7 +1,7 @@
 DIR = bin
 TARGET = $(DIR)/ftpdemo
 MOBJ = main.o
-OBJS = filetrans/filetrans.o ftp/ftplib.o json/ujdecode.o json/ultrajsondec.o mqtt/mqtt.o
+OBJS = filetrans/filetrans.o filetrans/ftp/ftplib.o json/njdecode.o mqtt/mqtt.o
 
 C = gcc
 CC = g++

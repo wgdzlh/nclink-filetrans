@@ -1,11 +1,11 @@
 
 #include <iostream>
+#include <cstring>
 #include <string>
 // #include<map>
 #include <sys/stat.h>
 
-#include "util/utils.h"
-#include "../ftp/ftplib.h"
+#include "ftp/ftplib.h"
 
 #include "filetrans.h"
 
@@ -20,11 +20,44 @@ static string username;
 static string password;
 static FileTransProtocol protocol;
 
-static size_t localFileSize;
-static size_t remoteFileSize;
+static off64_t localFileSize;
+static off64_t remoteFileSize;
 static bool uploading;
 // thread safe?
 // static std::map<string, double> progressPercents;
+
+
+FileTransProtocol cs2Protocol(const char *protocol)
+{
+	if (strcmp(protocol, "FTP") == 0)
+	{
+		return FTP;
+	} else if (strcmp(protocol, "SFTP") == 0)
+	{
+		return SFTP;
+	} else if (strcmp(protocol, "TFTP") == 0)
+	{
+		return TFTP;
+	} else
+	{
+		return UNAVAILABLE;
+	}
+}
+
+
+FileTransOperation cs2Operation(const char *op)
+{
+	if (strcmp(op, "pull") == 0)
+	{
+		return PULL;
+	} else if (strcmp(op, "push") == 0)
+	{
+		return PUSH;
+	} else
+	{
+		return UNDEFINDED;
+	}
+}
 
 
 static void setLocalFileSize(const char *filename)
@@ -45,7 +78,7 @@ static void setRemoteFileSize(const char *filename)
 
 static int progressCallback(off64_t xfered, void *arg)
 {
-	printf("%ld bytes transed.\n", xfered);
+	std::cout << xfered << " bytes transed." << std::endl;
 	if (uploading)
 		remoteFileSize = xfered;
 	else
@@ -72,8 +105,7 @@ static void connectServ()
 		connectFtpServ();
 		break;
 	default:
-		std::cout <<"File trans protocol not supported yet, abort.\n"
-				  << std::endl;
+		std::cout << "File trans protocol not supported yet, abort." << std::endl;
 		break;
 	}
 }
