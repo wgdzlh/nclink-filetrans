@@ -107,7 +107,7 @@ void setUploadConf(NJObject mtid, NJObject protocol, NJObject address,
 
 void printConf()
 {
-	printf("\"%s,%s,%d,%d,%s,%s,%s,%s,%s\"\n", _conf->ids, _conf->methodId, _conf->fileTransProtocol, _conf->operation,
+	printf("config: \"%s,%s,%d,%d,%s,%s,%s,%s,%s\"\n", _conf->ids, _conf->methodId, _conf->fileTransProtocol, _conf->operation,
 			_conf->address, _conf->user, _conf->password, _conf->source, _conf->destination);
 }
 
@@ -133,7 +133,7 @@ void parseArgsToConf(NJObject input, const char *ids)
 		args;
 	if (NJObjectUnpack(input, "SO", jsonKeys, /*&id,*/ &mtid, &args) == 2)
 	{
-		// printf("mtid: %ls\n", NJReadString(mtid, NULL));
+		printf("got: mtid, args\n");
 		const char *argsKeys[] = {
 			"protocol",
 			"address",

@@ -47,7 +47,7 @@ static std::map<NJType, char> TYPE_TO_CHAR = {
 NJObject NJDecode(const char *input)
 {
     const json_t &ret = json_t::parse(input, nullptr, false);
-    if (value_t::discarded == ret) {
+    if (value_t::discarded == ret.type()) {
         return nullptr;
     }
     return new json_t(ret);
