@@ -2,9 +2,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <semaphore.h>
 
 #include "os/os.h"
+#ifdef _WIN32
+#define sem_t HANDLE
+#define sem_init(sem,pshare,max_count) ((*sem = CreateSemaphore(NULL, max_count, max_count, NULL))!=NULL?0:-1)
+#define sem_post(sem) (ReleaseSemaphore(*sem,1,NULL)?0:-1)
+#define sem_trywait(sem) (WaitForSingleObject(*sem, 0)==WAIT_OBJECT_0?0:-1)
+#else
+#include <semaphore.h>
+#endif
+
 #include "filetrans/filetrans.h"
 #include "mqtt/mqtt.h"
 #include "json/njdecode.h"
