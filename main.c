@@ -2,12 +2,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <semaphore.h>
 
 #include "os/os.h"
 #include "filetrans/filetrans.h"
 #include "mqtt/mqtt.h"
 #include "json/njdecode.h"
 
+#define QUEUE_SIZE 8
 #define MSG_BUFFER_SIZE 256
 #define PATH_MAX_LEN 128
 #define MTID_MAX_LEN 32
@@ -42,6 +44,7 @@ typedef enum OpResult {
 	WRONG_PROTO,
 	EXEC,
 	NOT_EXEC,
+	QUEUE_FULL,
 } OpResult;
 
 
@@ -52,11 +55,13 @@ static const char *methodResults[] = {
 	"WRONG_PROTO",
 	"EXECUTING",
 	"NOT_EXECUTE",
+	"QUEUE_FULL",
 };
 
 
 static MethodConf *_conf;
 static Thread lastJob;
+static sem_t queue;
 
 
 static inline MethodConf* getMethodConf()
@@ -239,6 +244,7 @@ void* backgroundJob(void *cur)
 	_conf = cur;
 	fileOps();
 	freeMethodConf(&_conf);
+	sem_post(&queue);
 	return NULL;
 }
 
@@ -308,10 +314,18 @@ void on_mqtt_msg(struct mosquitto *mosq, void *obj, const struct mosquitto_messa
 	OpResult oret;
 	if (check_prefix(msg->topic, METHOD_CALL_HEADER))
 	{
-		oret = handleMethodCall(msg);
-		if (OK != oret)
+		if (0 == sem_trywait(&queue))
 		{
-			returnMsg(oret, "-1", msg->topic+CALL_IDS_INDEX);
+			oret = handleMethodCall(msg);
+			if (OK != oret)
+			{
+				returnMsg(oret, "-1", msg->topic+CALL_IDS_INDEX);
+				sem_post(&queue);
+			}
+		}
+		else
+		{
+			returnMsg(QUEUE_FULL, "-1", msg->topic+CALL_IDS_INDEX);
 		}
 	}
 	else if (check_prefix(msg->topic, METHOD_STATUS_HEADER))
@@ -337,6 +351,7 @@ int setupMqtt()
 
 int main(int argc, char *argv[])
 {
+	sem_init(&queue, 0, QUEUE_SIZE);
 	setupMqtt();
 	return 0;
 }
