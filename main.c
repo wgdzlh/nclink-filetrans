@@ -22,6 +22,7 @@
 
 
 typedef struct MethodConf {
+	Thread preJob;
 	FileTransProtocol fileTransProtocol;
 	char *ids;
 	char *methodId;
@@ -55,16 +56,16 @@ static const char *methodResults[] = {
 
 
 static MethodConf *_conf;
-static Thread _backgroundThread;
+static Thread lastJob;
 
 
-static inline MethodConf* getUploadConf()
+static inline MethodConf* getMethodConf()
 {
 	return (MethodConf *)calloc(1, sizeof(MethodConf));
 }
 
 
-void freeUploadConf()
+static inline void freeMethodConf()
 {
 	if (NULL != _conf)
 	{
@@ -86,29 +87,30 @@ static inline void json2cs(const NJObject input, char **output) {
 }
 
 
-void setUploadConf(NJObject mtid, NJObject protocol, NJObject address,
+void setMethodConf(MethodConf *conf, NJObject mtid, NJObject protocol, NJObject address,
 		NJObject user, NJObject pwd, NJObject src, NJObject dst, NJObject op)
 {
 	char *proto, *opr;
-	json2cs(mtid, &_conf->methodId);
+	json2cs(mtid, &conf->methodId);
 	json2cs(protocol, &proto);
-	json2cs(address, &_conf->address);
-	json2cs(user, &_conf->user);
-	json2cs(pwd, &_conf->password);
-	json2cs(src, &_conf->source);
-	json2cs(dst, &_conf->destination);
+	json2cs(address, &conf->address);
+	json2cs(user, &conf->user);
+	json2cs(pwd, &conf->password);
+	json2cs(src, &conf->source);
+	json2cs(dst, &conf->destination);
 	json2cs(op, &opr);
-	_conf->fileTransProtocol = cs2Protocol(proto);
-	_conf->operation = cs2Operation(opr);
+	conf->fileTransProtocol = cs2Protocol(proto);
+	conf->operation = cs2Operation(opr);
 	free(proto);
 	free(opr);
 }
 
 
-void printConf()
+void printConf(MethodConf *conf)
 {
-	printf("config: \"%s,%s,%d,%d,%s,%s,%s,%s,%s\"\n", _conf->ids, _conf->methodId, _conf->fileTransProtocol, _conf->operation,
-			_conf->address, _conf->user, _conf->password, _conf->source, _conf->destination);
+	printf("config: \"%s,%s,%d,%d,%s,%s,%s,%s,%s\"\n",
+			conf->ids, conf->methodId, conf->fileTransProtocol, conf->operation,
+			conf->address, conf->user, conf->password, conf->source, conf->destination);
 }
 
 
@@ -120,7 +122,7 @@ NJObject parseJSON(const char *input)
 }
 
 
-void parseArgsToConf(NJObject input, const char *ids)
+bool parseArgsToConf(NJObject json, MethodConf *conf)
 {
 	const char *jsonKeys[] = {
 		// "@id",
@@ -131,7 +133,7 @@ void parseArgsToConf(NJObject input, const char *ids)
 		// id,
 		mtid,
 		args;
-	if (NJObjectUnpack(input, "SO", jsonKeys, /*&id,*/ &mtid, &args) == 2)
+	if (NJObjectUnpack(json, "SO", jsonKeys, /*&id,*/ &mtid, &args) == 2)
 	{
 		printf("got: mtid, args\n");
 		const char *argsKeys[] = {
@@ -155,12 +157,11 @@ void parseArgsToConf(NJObject input, const char *ids)
 		if (NJObjectUnpack(args, "SSSSSSS", argsKeys,
 				&protocol, &address, &user, &password, &source, &destination, &operation) == 7)
 		{
-			_conf = getUploadConf();
-			_conf->ids = strdup(ids);
-			setUploadConf(mtid, protocol, address, user, password, source, destination, operation);
-			printConf();
+			setMethodConf(conf, mtid, protocol, address, user, password, source, destination, operation);
+			return true;
 		}
 	}
+	return false;
 }
 
 
@@ -212,7 +213,7 @@ static inline void action(int isPull)
 }
 
 
-void* fileOps(void *arg)
+static inline void fileOps()
 {
 	switch (_conf->operation)
 	{
@@ -226,7 +227,18 @@ void* fileOps(void *arg)
 		printf("operation not supported.\n");
 		break;
 	}
-	freeUploadConf();
+}
+
+
+void* backgroundJob(void *cur)
+{
+	if (NULL != _conf)
+	{
+		ThreadJoin(((MethodConf*)cur)->preJob, NULL);
+	}
+	_conf = cur;
+	fileOps();
+	freeMethodConf(&_conf);
 	return NULL;
 }
 
@@ -237,22 +249,22 @@ OpResult handleMethodCall(const struct mosquitto_message *msg)
 	NJObject json = parseJSON((char *)msg->payload);
 	if (NULL != json)
 	{
-		if (NULL != _conf)
+		MethodConf *cur = getMethodConf();
+		if (parseArgsToConf(json, cur))
 		{
-			ThreadJoin(_backgroundThread, NULL);
-		}
-		parseArgsToConf(json, msg->topic+CALL_IDS_INDEX);
-		if (NULL != _conf)
-		{
-			ThreadCreate(&_backgroundThread, NULL, fileOps, NULL);
+			cur->ids = strdup(msg->topic+CALL_IDS_INDEX);
+			cur->preJob = lastJob;
+			printConf(cur);
+			ThreadCreate(&lastJob, NULL, backgroundJob, cur);
 			ret = OK;
 		} else {
+			free(cur);
 			ret = WRONG_ARGS;
 		}
+		NJFree(&json);
 	} else {
 		ret = WRONG_JSON;
 	}
-	NJFree(&json);
 	return ret;
 }
 
@@ -275,10 +287,10 @@ OpResult handleMethodStatus(const struct mosquitto_message *msg)
 		} else {
 			ret = WRONG_ARGS;
 		}
+		NJFree(&json);
 	} else {
 		ret = WRONG_JSON;
 	}
-	NJFree(&json);
 	return ret;
 }
 
