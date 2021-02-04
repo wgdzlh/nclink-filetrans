@@ -6,7 +6,7 @@
 #include "os/os.h"
 #ifdef _WIN32
 #define sem_t HANDLE
-#define sem_init(sem,pshare,max_count) ((*sem = CreateSemaphore(NULL, max_count, max_count, NULL))!=NULL?0:-1)
+#define sem_init(sem,pshare,max_count) ((*sem=CreateSemaphore(NULL,max_count,max_count,NULL))!=NULL?0:-1)
 #define sem_post(sem) (ReleaseSemaphore(*sem,1,NULL)?0:-1)
 #define sem_trywait(sem) (WaitForSingleObject(*sem, 0)==WAIT_OBJECT_0?0:-1)
 #else
@@ -158,7 +158,7 @@ bool parseArgsToConf(NJObject json, MethodConf *conf)
 			"destination",
 			"operation",
 		};
-    	NJObject
+		NJObject
 			protocol,
 			address,
 			user,
@@ -211,7 +211,7 @@ void statusMsg(OpResult oret, const char *methodId, const char *ids)
 }
 
 
-static inline void action(int isPull)
+static inline void action(bool isPull)
 {
 	if (0 != setupServ(_conf->address, _conf->user, _conf->password, _conf->fileTransProtocol))
 	{
