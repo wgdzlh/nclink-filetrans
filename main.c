@@ -245,7 +245,7 @@ static inline void fileOps()
 
 void* backgroundJob(void *cur)
 {
-	if (NULL != _conf)
+	if (0 != ((MethodConf*)cur)->preJob)
 	{
 		ThreadJoin(((MethodConf*)cur)->preJob, NULL);
 	}
